@@ -17,9 +17,10 @@ class UAV(gym.Env):
         self.threshold = 0.3
 
         self.user_number = 20
-        self.total_power = 20
+        self.total_power = 10
         self.total_bandwidth = 1
         self.max_count = 0
+        self.last_reward = 0
 
         self.user_positions = []
         for _ in range(self.user_number):
@@ -29,27 +30,6 @@ class UAV(gym.Env):
             y = r * np.sin(theta)
             self.user_positions.append((x, y))
 
-        # 20 users
-        self.user_positions = np.array([(151.3120098584363, 90.17385922336058),
-                                        (19.721418451387617, -192.0168134106971),
-                                        (282.997552859035, -25.117500656951336),
-                                        (-77.27761526170703, -217.7746093751102),
-                                        (9.838087681429377, -3.2348210157293584),
-                                        (-174.5861043891205, 237.09766167611966),
-                                        (-191.6366491221487, 42.41536937973886),
-                                        (-75.56644503778357, 20.205776933611432),
-                                        (54.6618078165047, -35.613353278283945),
-                                        (-47.556017283810256, -123.86946865248639),
-                                        (184.45947862240845, -132.94999779939536),
-                                        (-154.6235336781708, -165.7987822588361),
-                                        (227.10557041413378, 107.34779553265385),
-                                        (163.88286570419424, 124.39377026403695),
-                                        (82.26650141424528, 231.69810088321785),
-                                        (205.3032016298353, -152.04156287442294),
-                                        (-123.96140858005407, -179.4790843057286),
-                                        (100.92959893903434, 139.56435626221938),
-                                        (-18.861422818634576, -194.75645653406048),
-                                        (201.0289672730241, -206.5560652803616)])
         # uav height change +1m ~ -1m
         # power change for users +0.1w ~ -0.1w  10 users
         # bandwidth change for each users
@@ -58,8 +38,8 @@ class UAV(gym.Env):
             self.user_number + [0] * self.user_number
         action_low_bounds = np.array(action_low_bounds, dtype=np.float32)
 
-        action_high_bounds = [1] + [0.1] * \
-            self.user_number + [0.01] * self.user_number
+        action_high_bounds = [1] + [0.01] * \
+            self.user_number + [0.001] * self.user_number
         action_high_bounds = np.array(action_high_bounds, dtype=np.float32)
 
         self.action_space = spaces.Box(low=action_low_bounds,
@@ -80,12 +60,22 @@ class UAV(gym.Env):
                                             high=ob_high_bounds,
                                             dtype=np.float32)
 
+    def seed(self, seed=None):
+        self.np_random, seed = gym.utils.seeding.np_random(seed)
+        # Use self.np_random instead of np.random everywhere in your class
+        return [seed]
+
     def reset(self, seed=None, options=None):
+        # super().reset(seed=seed)
+        # self.seed(seed)
         self.uav_height = 200
+
+        # try different seeds
 
         # set equal value
         self.uav_power = [self.total_power /
                           self.user_number] * self.user_number
+
         self.uav_bandwidth = [1 / self.user_number] * self.user_number
 
         info = {}
@@ -96,19 +86,37 @@ class UAV(gym.Env):
 
     def step(self, action):
 
+        power_penalty = 0
+        bandwidth_penalty = 0
         self.uav_height = np.clip(self.uav_height + action[0], 200, 500)
 
         self.uav_power += action[1:(1 + self.user_number)]
         self.uav_bandwidth += action[(1 + self.user_number):]
 
-        # should be more than 0
-        self.uav_power = np.clip(self.uav_power, 0, None)
-        self.uav_bandwidth = np.clip(self.uav_bandwidth, 0, None)
+        for i in range(self.user_number):
+            if self.uav_power[i] < 0:
+                self.uav_power[i] = 0
+                self.uav_bandwidth[i] = 0
+            if self.uav_bandwidth[i] < 0:
+                self.uav_bandwidth[i] = 0
+                self.uav_power[i] = 0
+
+        # print(self.uav_power, "power", np.sum(self.uav_power))
+        # print(self.uav_bandwidth, "bandwidth", np.sum(self.uav_bandwidth))
+
+        if np.sum(self.uav_power) - self.total_power > 0:
+            power_penalty += (np.sum(self.uav_power) - self.total_power)
+
+        if np.sum(self.uav_bandwidth) - 1 > 0:
+            bandwidth_penalty += np.sum(self.uav_bandwidth) - 1
+
+        print(power_penalty, "power_penalty")
+        print(bandwidth_penalty, "bandwidth_penalty")
 
         self.uav_power = self.uav_power / \
             np.sum(self.uav_power) * self.total_power
-        self.uav_bandwidth = self.uav_bandwidth / np.sum(self.uav_bandwidth)
-
+        self.uav_bandwidth = self.uav_bandwidth / \
+            np.sum(self.uav_bandwidth)
         etas = []
         count = 0
         for i in range(self.user_number):
@@ -116,8 +124,8 @@ class UAV(gym.Env):
             B = 0.136
             alpha = 3
             beta = 5
-            noise_dBm = -90
-            noise_linear = 10 ** (noise_dBm / 10)
+            noise_dB = -120
+            noise_linear = 10 ** (noise_dB / 10)
             degrees_of_freedom = 2
             e = 0.6
 
@@ -129,6 +137,7 @@ class UAV(gym.Env):
             probability_los = 1 / (1 + C * np.exp(-B * (theta - C)))
             probability_nlos = 1 - (1 / (1 + C * np.exp(-B * (theta - C))))
 
+            # fading
             snr_los = np.random.chisquare(
                 degrees_of_freedom) * self.uav_power[i] * np.power(d, -alpha) / noise_linear
             snr_nlos = np.random.exponential(0.1) * e * \
@@ -142,21 +151,13 @@ class UAV(gym.Env):
                 count = count + 1
 
             etas.append(eta)
+        reward = count
 
-        # calculate coverage percent
-        coverage = count / self.user_number
-        reward = coverage
-
-        # penalty
-
-        # use ratio
-        # if np.sum(self.uav_power) - self.total_power > 0:
-        #     reward -= (np.sum(self.uav_power) -
-        #                self.total_power)/self.total_power
-
-        # if np.sum(self.uav_bandwidth) - 1 > 0:
-        #     reward -= (np.sum(self.uav_bandwidth) - 1)/1
-
+        # if reward < self.last_reward:
+        #     reward = reward-1
+        reward -= power_penalty
+        reward -= bandwidth_penalty
+        self.last_reward = reward
         done = False
         if count == self.user_number:
             done = True

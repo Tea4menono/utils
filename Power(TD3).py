@@ -17,7 +17,7 @@ class Config:
         self.train_eps = 100
         self.test_eps = 10
         self.max_steps = 200
-        self.batch_size = 256
+        self.batch_size = 1024
         self.memory_capacity = 10000
         self.lr_a = 1e-3
         self.lr_c = 1e-3
@@ -26,8 +26,8 @@ class Config:
         self.policy_freq = 2
         self.noise_clip = 0.5
         self.policy_noise = 0.2
-        self.actor_hidden_dim = 256
-        self.critic_hidden_dim = 256
+        self.actor_hidden_dim = 128
+        self.critic_hidden_dim = 128
         self.n_states = None
         self.n_actions = None
         self.action_bound = None
@@ -144,7 +144,7 @@ class TD3:
         self.total_up += 1
         states, actions, rewards, next_states, dones = self.memory.sample()
         actions, rewards, dones = actions.view(-1,
-                                               31), rewards.view(-1, 1), dones.view(-1, 1)
+                                               41), rewards.view(-1, 1), dones.view(-1, 1)
 
         with torch.no_grad():
             noise = (torch.randn_like(actions, device=self.cfg.device) *
@@ -218,13 +218,14 @@ def train(env, agent, cfg):
             critic_loss += c_loss
             actor_loss += a_loss
             ep_reward += reward
+            print(reward)
             if done:
                 break
-        rewards.append(ep_reward)
+        rewards.append(ep_reward/ep_step)
         steps.append(ep_step)
-        print(f'回合:{i + 1}/{cfg.train_eps}  奖励:{ep_reward:.0f}  步数:{ep_step:.0f}'
-              f'  Critic损失:{critic_loss/ep_step:.4f}  Actor损失:{actor_loss/ep_step:.4f}')
-    print('完成训练!')
+        print(f'Episode:{i + 1}/{cfg.train_eps}  Reward:{ep_reward/ep_step:.4f}  Step:{ep_step:.0f}'
+              f'  Critic Loss:{critic_loss/ep_step:.4f}  Actor Loss:{actor_loss/ep_step:.4f}')
+    print('Finish Training!')
     env.close()
     return rewards, steps
 
@@ -256,14 +257,15 @@ if __name__ == '__main__':
     cfg = Config()
     env, agent = env_agent_config(cfg)
     train_rewards, train_steps = train(env, agent, cfg)
-    plt.figure(figsize=(12, 5))
-    plt.plot(train_rewards)
-    plt.title('Traning Total Reward per Episode(TD3)')
-    plt.xlabel('Episode')
-    plt.ylabel('Total Reward')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+    print("mean rewards", np.mean(train_rewards[-80:]))
+    # plt.figure(figsize=(12, 5))
+    # plt.plot(train_rewards)
+    # plt.title('Traning Total Reward per Episode(TD3)')
+    # plt.xlabel('Episode')
+    # plt.ylabel('Total Reward')
+    # plt.grid(True)
+    # plt.tight_layout()
+    # plt.show()
 
-    print('End Test!')
+    # print('End Test!')
     # test_rewards, test_steps = test(agent, cfg)

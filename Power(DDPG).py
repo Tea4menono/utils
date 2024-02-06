@@ -3,25 +3,25 @@ import numpy as np
 import torch
 from torch import nn, optim
 from torch.nn import functional as F
-
+import random
 from env import UAV
 
 
 class Config:
     def __init__(self):
-
         self.train_eps = 100
         self.test_eps = 10
         self.max_steps = 200
         self.batch_size = 1024
         self.memory_capacity = 10000
-        self.lr_a = 1e-3
+        self.lr_a = 2e-3
         self.lr_c = 1e-3
         self.gamma = 0.99
-        self.sigma = 0.01
+        self.sigma = 0.0001
         self.tau = 0.005
         self.actor_hidden_dim = 128
         self.critic_hidden_dim = 128
+        self.seed = random.randint(0, 100)
         self.n_states = None
         self.n_actions = None
         self.action_bound = None
@@ -168,7 +168,7 @@ def train(env, agent, cfg):
     rewards, steps, critic_losses, actor_losses = [], [], [], []
     for i in range(cfg.train_eps):
         ep_reward, ep_step = 0.0, 0
-        state, _ = env.reset()
+        state, _ = env.reset(seed=cfg.seed)
         critic_loss, actor_loss = 0.0, 0.0
         for _ in range(cfg.max_steps):
             ep_step += 1
@@ -180,52 +180,27 @@ def train(env, agent, cfg):
             c_loss, a_loss = agent.update()
             critic_loss += c_loss
             actor_loss += a_loss
-            ep_reward += reward
+
+            print(reward)
+            if ep_step > cfg.max_steps-50:
+                ep_reward += reward
             if done:
                 break
-        rewards.append(ep_reward/ep_step)
+        rewards.append(ep_reward/50)
         steps.append(ep_step)
         critic_losses.append(critic_loss/ep_step)
         actor_losses.append(actor_loss/ep_step)
-        print(f'Episode:{i + 1}/{cfg.train_eps}  Reward:{ep_reward/ep_step:.4f}  Steps:{ep_step:.0f}'
+        print(f'Episode:{i + 1}/{cfg.train_eps}  Reward:{ep_reward/50:.4f}  Steps:{ep_step:.0f}'
               f'  Critic Loss:{critic_loss/ep_step:.4f}  Actor Loss:{actor_loss/ep_step:.4f}')
     print('Finish Training!')
     env.close()
     return rewards, critic_losses, actor_losses, steps
 
 
-def test(agent, cfg):
-    print('Start Test!')
-    rewards, steps, avg_rewards = [], [], []
-    env = UAV()
-    for i in range(cfg.test_eps):
-        ep_reward, ep_step = 0.0, 0
-        state, _ = env.reset()
-        for _ in range(cfg.max_steps):
-            ep_step += 1
-            action = agent.choose_action(state)
-            next_state, reward, terminated, _ = env.step(action)
-            state = next_state
-            ep_reward += reward
-            if terminated:
-                break
-        steps.append(ep_step)
-        rewards.append(ep_reward)
-        avg_rewards.append(ep_reward / ep_step)
-
-        print(
-            f'Episode:{i + 1}/{cfg.test_eps}, Total Reward:{ep_reward:.0f} Mean Reward:{ep_reward / ep_step:.0f}')
-    print('Finish Test!')
-    env.close()
-    return rewards, steps
-
-
 if __name__ == '__main__':
     cfg = Config()
     env, agent = env_agent_config(cfg)
     rewards, critic_losses, actor_losses, steps = train(env, agent, cfg)
-    # test_rewards, test_steps = test(agent, cfg)
-
     plt.figure(figsize=(12, 5))
     plt.plot(rewards)
     plt.title('Traning Average Reward per Episode')
