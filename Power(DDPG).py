@@ -9,16 +9,15 @@ from env import UAV
 
 class Config:
     def __init__(self):
-        self.train_eps = 100
-        self.test_eps = 10
-        self.max_steps = 200
+        self.train_eps = 1
+        self.max_steps = 50
         self.batch_size = 1024
         self.memory_capacity = 10000
-        self.lr_a = 2e-3
+        self.lr_a = 1e-3
         self.lr_c = 1e-3
         self.gamma = 0.99
-        self.sigma = 0.0001
-        self.tau = 0.005
+        self.sigma = 0.1
+        self.tau = 0.01
         self.actor_hidden_dim = 128
         self.critic_hidden_dim = 128
         self.seed = random.randint(0, 100)
@@ -73,6 +72,7 @@ class Actor(nn.Module):
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
+        print(torch.tanh(self.fc3(x)))
         action = torch.tanh(self.fc3(x)) * torch.FloatTensor(self.action_bound)
         return action
 
@@ -180,17 +180,17 @@ def train(env, agent, cfg):
             c_loss, a_loss = agent.update()
             critic_loss += c_loss
             actor_loss += a_loss
-
             print(reward)
-            if ep_step > cfg.max_steps-50:
-                ep_reward += reward
+
+            # if ep_step > cfg.max_steps-50:
+            ep_reward += reward
             if done:
                 break
-        rewards.append(ep_reward/50)
+        rewards.append(ep_reward/ep_step)
         steps.append(ep_step)
         critic_losses.append(critic_loss/ep_step)
         actor_losses.append(actor_loss/ep_step)
-        print(f'Episode:{i + 1}/{cfg.train_eps}  Reward:{ep_reward/50:.4f}  Steps:{ep_step:.0f}'
+        print(f'Episode:{i + 1}/{cfg.train_eps}  Reward:{ep_reward/ep_step:.4f}  Steps:{ep_step:.0f}'
               f'  Critic Loss:{critic_loss/ep_step:.4f}  Actor Loss:{actor_loss/ep_step:.4f}')
     print('Finish Training!')
     env.close()
@@ -201,14 +201,12 @@ if __name__ == '__main__':
     cfg = Config()
     env, agent = env_agent_config(cfg)
     rewards, critic_losses, actor_losses, steps = train(env, agent, cfg)
-    plt.figure(figsize=(12, 5))
-    plt.plot(rewards)
-    plt.title('Traning Average Reward per Episode')
-    plt.xlabel('Episode')
-    plt.ylabel('Total Reward')
-    plt.grid(True)
+    # plt.figure(figsize=(12, 5))
+    # plt.plot(rewards)
+    # plt.title('Traning Average Reward per Episode')
+    # plt.xlabel('Episode')
+    # plt.ylabel('Total Reward')
+    # plt.grid(True)
 
-    plt.tight_layout()
-    plt.show()
-
-    print('End Test!')
+    # plt.tight_layout()
+    # plt.show()

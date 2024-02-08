@@ -190,8 +190,8 @@ class TD3:
 
 def env_agent_config(cfg):
     env = UAV()
-    print(f'观测空间 = {env.observation_space}')
-    print(f'动作空间 = {env.action_space}')
+    print(f'Observation Space = {env.observation_space}')
+    print(f'Action Space = {env.action_space}')
     cfg.n_states = env.observation_space.shape[0]
     cfg.n_actions = env.action_space.shape[0]
     cfg.action_bound = env.action_space.high[0]
@@ -200,7 +200,7 @@ def env_agent_config(cfg):
 
 
 def train(env, agent, cfg):
-    print('开始训练!')
+    print('Start Training!')
     cfg.show()
     rewards, steps = [], []
     for i in range(cfg.train_eps):
@@ -230,42 +230,17 @@ def train(env, agent, cfg):
     return rewards, steps
 
 
-def test(agent, cfg):
-    print('开始测试!')
-    rewards, steps = [], []
-    env = UAV()
-    for i in range(cfg.test_eps):
-        ep_reward, ep_step = 0.0, 0
-        state, _ = env.reset()
-        for _ in range(cfg.max_steps):
-            ep_step += 1
-            action = agent.choose_action(state)
-            next_state, reward, terminated, _ = env.step(action)
-            state = next_state
-            ep_reward += reward
-            if terminated:
-                break
-        steps.append(ep_step)
-        rewards.append(ep_reward)
-        print(f'回合:{i + 1}/{cfg.test_eps}, 奖励:{ep_reward:.3f}')
-    print('结束测试!')
-    env.close()
-    return rewards, steps
-
-
 if __name__ == '__main__':
     cfg = Config()
     env, agent = env_agent_config(cfg)
     train_rewards, train_steps = train(env, agent, cfg)
-    print("mean rewards", np.mean(train_rewards[-80:]))
-    # plt.figure(figsize=(12, 5))
-    # plt.plot(train_rewards)
-    # plt.title('Traning Total Reward per Episode(TD3)')
-    # plt.xlabel('Episode')
-    # plt.ylabel('Total Reward')
-    # plt.grid(True)
-    # plt.tight_layout()
-    # plt.show()
+    plt.figure(figsize=(12, 5))
+    plt.plot(train_rewards)
+    plt.title('Traning Total Reward per Episode(TD3)')
+    plt.xlabel('Episode')
+    plt.ylabel('Total Reward')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
-    # print('End Test!')
-    # test_rewards, test_steps = test(agent, cfg)
+    print('End Test!')
