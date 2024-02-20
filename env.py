@@ -23,12 +23,12 @@ class UAV(gym.Env):
             y = r * np.sin(theta)
             self.user_positions.append((x, y))
 
-        action_low_bounds = [0] + [0] * \
-            self.user_number + [0] * self.user_number
+        action_low_bounds = [-1] + [-0.01] * \
+            self.user_number + [-0.01] * self.user_number
         action_low_bounds = np.array(action_low_bounds, dtype=np.float32)
 
-        action_high_bounds = [1] + [0.001] * \
-            self.user_number + [0.001] * self.user_number
+        action_high_bounds = [1] + [0.01] * \
+            self.user_number + [0.01] * self.user_number
         action_high_bounds = np.array(action_high_bounds, dtype=np.float32)
 
         self.action_space = spaces.Box(low=action_low_bounds,
@@ -49,13 +49,10 @@ class UAV(gym.Env):
     def reset(self, seed=None, options=None):
 
         self.uav_height = 200
-
-        # set equal value
         self.uav_power = [self.total_power /
                           self.user_number] * self.user_number
 
         self.uav_bandwidth = [1 / self.user_number] * self.user_number
-
         info = {}
         return self._get_obs(), info
 
@@ -68,6 +65,8 @@ class UAV(gym.Env):
         self.uav_bandwidth += action[(1 + self.user_number):]
 
         for i in range(self.user_number):
+
+            # reset
             if self.uav_power[i] < 0:
                 self.uav_power[i] = 0
                 self.uav_bandwidth[i] = 0
@@ -76,19 +75,17 @@ class UAV(gym.Env):
                 self.uav_bandwidth[i] = 0
                 self.uav_power[i] = 0
 
-        # if np.sum(self.uav_power) - self.total_power > 0:
-        #     power_penalty += (np.sum(self.uav_power) - self.total_power)
+        if np.sum(self.uav_power) - self.total_power > 0:
+            power_penalty += (np.sum(self.uav_power) - self.total_power)
 
-        # if np.sum(self.uav_bandwidth) - 1 > 0:
-        #     bandwidth_penalty += (np.sum(self.uav_bandwidth) - 1)
+        if np.sum(self.uav_bandwidth) - 1 > 0:
+            bandwidth_penalty += (np.sum(self.uav_bandwidth) - 1)
 
+        # normalization
         self.uav_power = self.uav_power / \
             np.sum(self.uav_power) * self.total_power
         self.uav_bandwidth = self.uav_bandwidth / \
             np.sum(self.uav_bandwidth)
-
-        # print(self.uav_power, "power", np.sum(self.uav_power))
-        # print(self.uav_bandwidth, "bandwidth", np.sum(self.uav_bandwidth))
 
         etas = []
         count = 0
@@ -126,8 +123,8 @@ class UAV(gym.Env):
             etas.append(eta)
 
         reward = count
-        reward -= power_penalty
-        reward -= bandwidth_penalty
+        # reward -= power_penalty
+        # reward -= bandwidth_penalty
 
         done = False
         if count == self.user_number:

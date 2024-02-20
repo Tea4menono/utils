@@ -9,21 +9,22 @@ from env import UAV
 
 class Config:
     def __init__(self):
-        self.train_eps = 1
-        self.max_steps = 50
-        self.batch_size = 1024
+        self.train_eps = 100
+        self.max_steps = 200
+        self.batch_size = 512
         self.memory_capacity = 10000
-        self.lr_a = 1e-3
-        self.lr_c = 1e-3
+        self.lr_a = 1e-4  # Learning rate for the actor
+        self.lr_c = 1e-4  # Learning rate for the critic
         self.gamma = 0.99
-        self.sigma = 0.1
+        self.sigma = 0.005
         self.tau = 0.01
         self.actor_hidden_dim = 128
         self.critic_hidden_dim = 128
         self.seed = random.randint(0, 100)
         self.n_states = None
         self.n_actions = None
-        self.action_bound = None
+        self.action_high_bound = None
+        self.action_low_bound = None
         self.device = torch.device('cuda') \
             if torch.cuda.is_available() else torch.device('cpu')
 
@@ -61,19 +62,27 @@ class ReplayBuffer:
         return samples
 
 
+def init_weights(m):
+    if type(m) == nn.Linear:
+        torch.nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+        if m.bias is not None:
+            torch.nn.init.constant_(m.bias, 0)
+
+
 class Actor(nn.Module):
     def __init__(self, cfg):
         super(Actor, self).__init__()
         self.fc1 = nn.Linear(cfg.n_states, cfg.actor_hidden_dim)
+        self.bn1 = nn.BatchNorm1d(cfg.actor_hidden_dim)
         self.fc2 = nn.Linear(cfg.actor_hidden_dim, cfg.actor_hidden_dim)
+        self.bn2 = nn.BatchNorm1d(cfg.actor_hidden_dim)
         self.fc3 = nn.Linear(cfg.actor_hidden_dim, cfg.n_actions)
-        self.action_bound = cfg.action_bound
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        print(torch.tanh(self.fc3(x)))
-        action = torch.tanh(self.fc3(x)) * torch.FloatTensor(self.action_bound)
+        action = torch.tanh(self.fc3(x)) * \
+            torch.FloatTensor(cfg.action_high_bound) * 0.5
         return action
 
 
@@ -84,6 +93,7 @@ class Critic(nn.Module):
                              cfg.critic_hidden_dim)
         self.fc2 = nn.Linear(cfg.critic_hidden_dim, cfg.critic_hidden_dim)
         self.fc3 = nn.Linear(cfg.critic_hidden_dim, 1)
+        self.apply(init_weights)  # Apply weight initialization
 
     def forward(self, x, a):
         x = torch.cat([x, a], dim=1)
@@ -112,7 +122,10 @@ class DDPG:
                              device=self.cfg.device).unsqueeze(0)
         action = self.actor(state).squeeze(0).cpu().numpy()
         action += self.cfg.sigma * np.random.randn(self.cfg.n_actions)
-        return action
+        noisy_action = np.clip(
+            action, self.cfg.action_low_bound, self.cfg.action_high_bound)
+
+        return noisy_action
 
     def update(self):
         if self.memory.size < self.cfg.batch_size:
@@ -121,7 +134,6 @@ class DDPG:
 
         actions, rewards, dones = actions.view(-1,
                                                41), rewards.view(-1, 1), dones.view(-1, 1)
-
         next_q_value = self.critic_target(
             next_states, self.actor_target(next_states))
         target_q_value = rewards + (1 - dones) * self.cfg.gamma * next_q_value
@@ -130,11 +142,15 @@ class DDPG:
             self.critic(states, actions), target_q_value))
         self.critic_optim.zero_grad()
         critic_loss.backward()
+        # Apply gradient clipping to Critic
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1)
         self.critic_optim.step()
 
         actor_loss = -torch.mean(self.critic(states, self.actor(states)))
         self.actor_optim.zero_grad()
         actor_loss.backward()
+        # Apply gradient clipping to Actor
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1)
         self.actor_optim.step()
 
         self.update_params()
@@ -156,7 +172,8 @@ def env_agent_config(cfg):
     print(f'action = {env.action_space}')
     cfg.n_states = env.observation_space.shape[0]
     cfg.n_actions = env.action_space.shape[0]
-    cfg.action_bound = env.action_space.high
+    cfg.action_high_bound = env.action_space.high
+    cfg.action_low_bound = env.action_space.low
 
     agent = DDPG(cfg)
     return env, agent
@@ -175,14 +192,21 @@ def train(env, agent, cfg):
             action = agent.choose_action(state)
             next_state, reward, terminated, truncated, _ = env.step(action)
             done = terminated
+            # if ep_step == 1:
+            # print(reward, "reward")
+            # print(state[1:21], "power state")
+            # print(state[21:], "bw state")
+            # print(action[1:21], "power action")
+            # print(action[21:], "bw action")
+            # print(next_state[1:21], "power next_state")
+            # print(next_state[21:], "bw next_state")
+            # print("====================================")
+
             agent.memory.push((state, action, reward, next_state, done))
             state = next_state
             c_loss, a_loss = agent.update()
             critic_loss += c_loss
             actor_loss += a_loss
-            print(reward)
-
-            # if ep_step > cfg.max_steps-50:
             ep_reward += reward
             if done:
                 break
@@ -201,12 +225,12 @@ if __name__ == '__main__':
     cfg = Config()
     env, agent = env_agent_config(cfg)
     rewards, critic_losses, actor_losses, steps = train(env, agent, cfg)
-    # plt.figure(figsize=(12, 5))
-    # plt.plot(rewards)
-    # plt.title('Traning Average Reward per Episode')
-    # plt.xlabel('Episode')
-    # plt.ylabel('Total Reward')
-    # plt.grid(True)
+    plt.figure(figsize=(12, 5))
+    plt.plot(rewards)
+    plt.title('Traning Average Reward per Episode')
+    plt.xlabel('Episode')
+    plt.ylabel('Total Reward')
+    plt.grid(True)
 
-    # plt.tight_layout()
-    # plt.show()
+    plt.tight_layout()
+    plt.show()
