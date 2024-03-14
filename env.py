@@ -48,7 +48,6 @@ class UAV(gym.Env):
 
     def reset(self, seed=None, options=None):
 
-        self.uav_height = 200
         self.uav_power = [self.total_power /
                           self.user_number] * self.user_number
 
