@@ -18,7 +18,7 @@ user_positions = [(radius * np.sqrt(np.random.uniform(0, 1)) * np.cos(np.random.
 
 uav_bandwidth = [0] * user_number
 uav_power = [0] * user_number
-    
+
 
 def calculate_reward(bandwidth, power, index):
     c = 11.95
@@ -100,7 +100,6 @@ class BandwidthEnv(gym.Env):
 
     def reset(self, **kwargs):
         self.state = np.array([0.0005, 0.0005], dtype=np.float32)
-        return self.state
 
 
 # training DQN
