@@ -6,6 +6,7 @@ __author__ = 'Xuli Cai'
 
 import math
 import random
+import matplotlib.pyplot as plt
 
 import gymnasium as gym
 import numpy as np
@@ -20,6 +21,9 @@ threshold = 0.2
 user_number = 100
 total_power = 1
 total_bandwidth = 1
+
+band = []
+power = []
 
 # set up logger
 user_positions = [(radius * np.sqrt(np.random.uniform(0, 1)) * np.cos(np.random.uniform(0, 2 * np.pi)),
@@ -75,6 +79,8 @@ class BandwidthAllocationEnv(gym.Env):
 
         done = 1 <= ratio
 
+        # if len(band) <= 100000:
+        # band.append(ratio)
         return self.state, reward, done, False, {}
 
 
@@ -143,6 +149,15 @@ loaded_model = DQN.load("dqn_custom_env")
 print("Model loaded successfully")
 
 
+# plt.figure(figsize=(30, 10))
+# plt.title('DQN minimum bandwidth')
+# plt.xlabel('Epochs')
+# plt.ylabel('Ratio')
+#
+# plt.plot(band)
+# plt.show()
+
+
 class PowerEnv(gym.Env):
     def __init__(self):
         super(PowerEnv, self).__init__()
@@ -204,11 +219,15 @@ class PowerEnv(gym.Env):
             else:
                 break
 
-        penalty = sum(self.state['power']) - total_power if sum(self.state['power']) > total_power else 0
-        reward = reward - penalty * 100
         self.max = max(self.max, reward)
+        overload = sum(self.state['power']) >= total_power
+        if overload:
+            reward = reward - (sum(self.state['power']) - total_power) * 10
         print("max:", self.max, "reward:", reward, "total", sum(self.state['power']))
-        return self.state, reward, False, False, {}
+
+        if len(power) < 100:
+            power.append(reward)
+        return self.state, reward, len(power) >= 100, False, {}
 
 
 # training DDPG
@@ -217,4 +236,12 @@ n_actions = ddpg_env.action_space.shape[-1]
 power_action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.01 * np.ones(n_actions))
 ddpg_agent = DDPG("MultiInputPolicy", ddpg_env, action_noise=power_action_noise, verbose=1)
 # ddpg_agent = TD3("MlpPolicy", ddpg_env, action_noise=power_action_noise, verbose=1)
-ddpg_agent.learn(total_timesteps=1000)
+ddpg_agent.learn(total_timesteps=1)
+
+plt.figure(figsize=(30, 10))
+plt.title('DDPG served user')
+plt.xlabel('Epochs')
+plt.ylabel('User number')
+
+plt.plot(power)
+plt.show()
